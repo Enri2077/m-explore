@@ -77,6 +77,8 @@ Explore::Explore()
     marker_array_publisher_ =
         private_nh_.advertise<visualization_msgs::MarkerArray>("frontiers", 10);
   }
+  exploration_finished_publisher_ =
+        private_nh_.advertise<std_msgs::Bool>("exploration_finished", 10);
 
   ROS_INFO("Waiting to connect to move_base server");
   move_base_client_.waitForServer();
@@ -153,7 +155,7 @@ void Explore::visualizeFrontiers(
     m.type = visualization_msgs::Marker::SPHERE;
     m.id = int(id);
     m.pose.position = frontier.initial;
-    // scale frontier according to its cost (costier frontiers will be smaller)
+    // scale frontier according to its cost (costlier frontiers will be smaller)
     double scale = std::min(std::abs(min_cost * 0.4 / frontier.cost), 0.5);
     m.scale.x = scale;
     m.scale.y = scale;
@@ -246,7 +248,7 @@ void Explore::makePlan()
 
 bool Explore::goalOnBlacklist(const geometry_msgs::Point& goal)
 {
-  constexpr static size_t tolerace = 5;
+  constexpr static size_t tolerance = 5;
   costmap_2d::Costmap2D* costmap2d = costmap_client_.getCostmap();
 
   // check if a goal is on the blacklist for goals that we're pursuing
@@ -254,8 +256,8 @@ bool Explore::goalOnBlacklist(const geometry_msgs::Point& goal)
     double x_diff = fabs(goal.x - frontier_goal.x);
     double y_diff = fabs(goal.y - frontier_goal.y);
 
-    if (x_diff < tolerace * costmap2d->getResolution() &&
-        y_diff < tolerace * costmap2d->getResolution())
+    if (x_diff < tolerance * costmap2d->getResolution() &&
+        y_diff < tolerance * costmap2d->getResolution())
       return true;
   }
   return false;
@@ -271,7 +273,7 @@ void Explore::reachedGoal(const actionlib::SimpleClientGoalState& status,
     ROS_DEBUG("Adding current goal to black list");
   }
 
-  // find new goal immediatelly regardless of planning frequency.
+  // find new goal immediately regardless of planning frequency.
   // execute via timer to prevent dead lock in move_base_client (this is
   // callback for sendGoal, which is called in makePlan). the timer must live
   // until callback is executed.
@@ -290,6 +292,7 @@ void Explore::stop()
   move_base_client_.cancelAllGoals();
   exploring_timer_.stop();
   ROS_INFO("Exploration stopped.");
+  exploration_finished_publisher_.publish(true);
 }
 
 }  // namespace explore
@@ -297,10 +300,6 @@ void Explore::stop()
 int main(int argc, char** argv)
 {
   ros::init(argc, argv, "explore");
-  if (ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME,
-                                     ros::console::levels::Debug)) {
-    ros::console::notifyLoggerLevelsChanged();
-  }
   explore::Explore explore;
   ros::spin();
 
